@@ -298,9 +298,11 @@ const App = () => {
           </section>
           <aside className="flex items-start justify-center">
             <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 w-full max-w-lg sticky top-4">
-              <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center">
+              <div className="aspect-square bg-gray-100 rounded-lg overflow-hidden flex items-center justify-center relative">
                 {!modelReady && (
-                  <div className="text-gray-500 text-sm">Loading 3D model...</div>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-gray-500 text-sm">Loading 3D model...</span>
+                  </div>
                 )}
                 <Canvas camera={{ position: [0, -0.5, 4.5], fov: 45 }} shadows>
                   <ambientLight intensity={0.8} />
