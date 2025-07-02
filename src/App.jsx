@@ -139,9 +139,13 @@ const App = () => {
           setFinalText((prev) => prev + finalTranscript);
           const newIslWords = parseToISL(finalTranscript);
           if (newIslWords.length > 0) {
-            setIslWords((prev) => [...prev, ...newIslWords]);
-            setLastPlayedWords((prev) => [...prev, ...newIslWords]);
-            setTimeout(() => playSignSequence(newIslWords), 100);
+            setIslWords((prev) => {
+              const startIndex = prev.length;
+              const updated = [...prev, ...newIslWords];
+              setLastPlayedWords((lp) => [...lp, ...newIslWords]);
+              setTimeout(() => playSignSequence(newIslWords, startIndex), 100);
+              return updated;
+            });
           }
         }
       };
@@ -157,7 +161,7 @@ const App = () => {
       recognitionRef.current.onend = () => {
         if (isListening) {
           // Automatically restart recognition if we're still supposed to be listening
-          restartRecognition();
+          ensureRecognitionRunning();
         }
       };
     }
@@ -188,12 +192,8 @@ const App = () => {
     if (recognitionRef.current && !isPlaying) {
       setIsListening(true);
       setInterimText("");
-      setFinalText("");
-      setIslWords([]);
-      setLastPlayedWords([]);
       setCurrentWordIndex(-1);
       setIsIdle(true);
-
       try {
         recognitionRef.current.start();
       } catch (error) {
@@ -214,18 +214,26 @@ const App = () => {
     setInterimText("");
   };
 
-  const playSignSequence = async (wordsToPlay = islWords) => {
-    if (wordsToPlay.length === 0 || isPlaying) return;
+  // Helper to ensure recognition is running if isListening is true
+  const ensureRecognitionRunning = () => {
+    if (recognitionRef.current && isListening) {
+      try {
+        recognitionRef.current.start();
+      } catch (error) {
+        // Ignore error if already started
+      }
+    }
+  };
 
+  const playSignSequence = async (wordsToPlay = islWords, startIndex = 0) => {
+    if (wordsToPlay.length === 0 || isPlaying) return;
     setIsPlaying(true);
     setIsIdle(false);
-
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
     }
-
     for (let i = 0; i < wordsToPlay.length; i++) {
-      setCurrentWordIndex(i);
+      setCurrentWordIndex(startIndex + i);
       await new Promise((resolve) => {
         const duration = 1500;
         playbackTimeoutRef.current = setTimeout(
@@ -234,10 +242,11 @@ const App = () => {
         );
       });
     }
-
     setIsPlaying(false);
     setCurrentWordIndex(-1);
     setIsIdle(true);
+    // Ensure recognition is running after animation
+    ensureRecognitionRunning();
   };
 
   const replaySequence = () => {
@@ -248,7 +257,10 @@ const App = () => {
       setCurrentWordIndex(-1);
       setIsIdle(true);
       setTimeout(() => {
-        playSignSequence(lastPlayedWords);
+        playSignSequence(
+          lastPlayedWords,
+          islWords.length - lastPlayedWords.length
+        );
       }, 50);
     }
   };
