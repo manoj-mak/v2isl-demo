@@ -110,14 +110,15 @@ const App = () => {
   const recognitionRef = useRef(null);
   const playbackTimeoutRef = useRef(null);
   const restartTimeoutRef = useRef(null);
+  const recognitionStateRef = useRef({ isActive: false, shouldRestart: false });
 
   useEffect(() => {
     if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
       const SpeechRecognition =
         window.SpeechRecognition || window.webkitSpeechRecognition;
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true; // Enable continuous listening
-      recognitionRef.current.interimResults = true; // Enable interim results
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
       recognitionRef.current.lang = "en-US";
 
       recognitionRef.current.onresult = (event) => {
@@ -150,18 +151,38 @@ const App = () => {
         }
       };
 
+      recognitionRef.current.onstart = () => {
+        console.log("Speech recognition started");
+        recognitionStateRef.current.isActive = true;
+      };
+
       recognitionRef.current.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
+        recognitionStateRef.current.isActive = false;
+
         if (event.error === "no-speech" && isListening) {
-          // Restart recognition if no speech detected but still listening
-          restartRecognition();
+          // Restart recognition after a short delay
+          setTimeout(() => {
+            if (isListening && !recognitionStateRef.current.isActive) {
+              startRecognition();
+            }
+          }, 1000);
         }
       };
 
       recognitionRef.current.onend = () => {
-        if (isListening) {
-          // Automatically restart recognition if we're still supposed to be listening
-          ensureRecognitionRunning();
+        console.log("Speech recognition ended");
+        recognitionStateRef.current.isActive = false;
+
+        // Restart if we should still be listening
+        if (isListening && !recognitionStateRef.current.shouldRestart) {
+          recognitionStateRef.current.shouldRestart = true;
+          setTimeout(() => {
+            if (isListening && !recognitionStateRef.current.isActive) {
+              startRecognition();
+            }
+            recognitionStateRef.current.shouldRestart = false;
+          }, 100);
         }
       };
     }
@@ -176,15 +197,17 @@ const App = () => {
     };
   }, [isListening]);
 
-  const restartRecognition = () => {
-    if (recognitionRef.current && isListening) {
-      restartTimeoutRef.current = setTimeout(() => {
-        try {
-          recognitionRef.current.start();
-        } catch (error) {
-          console.error("Error restarting recognition:", error);
+  const startRecognition = () => {
+    if (recognitionRef.current && !recognitionStateRef.current.isActive) {
+      try {
+        recognitionRef.current.start();
+      } catch (error) {
+        console.error("Error starting recognition:", error);
+        // If already started, that's okay
+        if (error.name !== "InvalidStateError") {
+          recognitionStateRef.current.isActive = false;
         }
-      }, 100);
+      }
     }
   };
 
@@ -194,18 +217,15 @@ const App = () => {
       setInterimText("");
       setCurrentWordIndex(-1);
       setIsIdle(true);
-      try {
-        recognitionRef.current.start();
-      } catch (error) {
-        console.error("Error starting recognition:", error);
-        setIsListening(false);
-      }
+      recognitionStateRef.current.shouldRestart = false;
+      startRecognition();
     }
   };
 
   const stopListening = () => {
     setIsListening(false);
-    if (recognitionRef.current) {
+    recognitionStateRef.current.shouldRestart = false;
+    if (recognitionRef.current && recognitionStateRef.current.isActive) {
       recognitionRef.current.stop();
     }
     if (restartTimeoutRef.current) {
@@ -214,24 +234,16 @@ const App = () => {
     setInterimText("");
   };
 
-  // Helper to ensure recognition is running if isListening is true
-  const ensureRecognitionRunning = () => {
-    if (recognitionRef.current && isListening) {
-      try {
-        recognitionRef.current.start();
-      } catch (error) {
-        // Ignore error if already started
-      }
-    }
-  };
-
   const playSignSequence = async (wordsToPlay = islWords, startIndex = 0) => {
     if (wordsToPlay.length === 0 || isPlaying) return;
+
     setIsPlaying(true);
     setIsIdle(false);
+
     if (playbackTimeoutRef.current) {
       clearTimeout(playbackTimeoutRef.current);
     }
+
     for (let i = 0; i < wordsToPlay.length; i++) {
       setCurrentWordIndex(startIndex + i);
       await new Promise((resolve) => {
@@ -242,11 +254,18 @@ const App = () => {
         );
       });
     }
+
     setIsPlaying(false);
     setCurrentWordIndex(-1);
     setIsIdle(true);
-    // Ensure recognition is running after animation
-    ensureRecognitionRunning();
+
+    // Ensure recognition continues after animation with a small delay
+    setTimeout(() => {
+      if (isListening && !recognitionStateRef.current.isActive) {
+        console.log("Restarting recognition after animation");
+        startRecognition();
+      }
+    }, 500);
   };
 
   const replaySequence = () => {
